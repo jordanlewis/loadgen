@@ -16,6 +16,7 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
 	"math/rand"
@@ -190,6 +191,30 @@ func (n newOrder) run(db *sql.DB, wID int) (interface{}, error) {
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`)
 			if err != nil {
 				return err
+			}
+
+			var queryBuf bytes.Buffer
+			queryBuf.WriteString("SELECT i_price, i_name, i_data FROM item WHERE i_id IN (")
+			for i := range d.items {
+				queryBuf.WriteString("$")
+				queryBuf.WriteString(i + 1)
+				if i < len(d.items)-1 {
+					queryBuf.WriteString(",")
+				}
+			}
+			queryBuf.WriteString(")")
+
+			rows, err := tx.Query(queryBuf.String())
+			if err != nil {
+				return err
+			}
+			if rollback && len(rows) < len(d.items) {
+				// 2.4.2.3: roll back when we're expecting a rollback due to
+				// simulated user error (invalid item id) and we actually
+				// can't find the item. The spec requires us to actually go
+				// to the database for this, even though we know earlier
+				// that the item has an invalid number.
+				return errSimulated
 			}
 
 			var iData string
